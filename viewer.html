@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ABUZ8 · 3D Space Viewer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+
+  <!-- Three.js importmap — must come BEFORE any module scripts -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #FAF8F5;
+      --bg2:      #F3F0EB;
+      --bg3:      #EBE7E0;
+      --card:     #FFFFFF;
+      --text:     #2C2A25;
+      --muted:    #6B6560;
+      --hint:     #9C9590;
+      --gold:     #C8A55C;
+      --gold-h:   #B8953C;
+      --gold-s:   rgba(200,165,92,0.12);
+      --gold-b:   rgba(200,165,92,0.30);
+      --border:   rgba(0,0,0,0.08);
+      --rose:     #C47070;
+    }
+
+    html, body { width: 100%; height: 100%; overflow: hidden;
+                 font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); }
+
+    /* ─── CANVAS ROOT (3D renders here) ─────────────────── */
+    #canvas-root {
+      position: fixed; inset: 0; z-index: 1;
+      width: 100%; height: 100%;
+    }
+    #canvas-root canvas {
+      display: block; width: 100% !important; height: 100% !important;
+    }
+
+    /* ─── EMPTY STATE ────────────────────────────────────── */
+    #empty-state {
+      position: fixed; inset: 0; z-index: 20;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--bg);
+      transition: opacity 0.45s ease, visibility 0.45s ease;
+    }
+    #empty-state.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+
+    .load-wrap {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 44px 48px;
+      width: 100%; max-width: 500px; margin: 0 24px;
+      box-shadow: 0 12px 40px rgba(44,42,37,0.08), 0 4px 12px rgba(44,42,37,0.04);
+    }
+
+    .load-logo {
+      font-size: 13px; font-weight: 700; letter-spacing: 0.06em;
+      color: var(--gold); text-transform: uppercase; margin-bottom: 28px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .load-logo a { color: var(--muted); font-weight: 400; font-size: 12px;
+                   text-decoration: none; margin-left: auto; }
+    .load-logo a:hover { color: var(--text); }
+
+    .load-wrap h2 { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; }
+    .load-wrap > p { font-size: 14px; color: var(--muted); margin-bottom: 28px; line-height: 1.55; }
+
+    /* URL row */
+    .url-row { display: flex; gap: 8px; margin-bottom: 16px; }
+
+    input[type="text"] {
+      flex: 1; background: var(--bg2); border: 1.5px solid var(--border);
+      border-radius: 10px; padding: 11px 14px;
+      font-family: 'DM Sans', sans-serif; font-size: 13px; color: var(--text);
+      outline: none; transition: border-color 0.2s;
+    }
+    input[type="text"]::placeholder { color: var(--hint); }
+    input[type="text"]:focus { border-color: var(--gold); background: var(--card); }
+
+    .btn-load {
+      background: var(--gold); color: #fff;
+      border: none; border-radius: 10px;
+      padding: 11px 18px; font-family: 'DM Sans', sans-serif;
+      font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+      transition: all 0.2s; box-shadow: 0 2px 8px rgba(200,165,92,0.3);
+    }
+    .btn-load:hover { background: var(--gold-h); }
+
+    /* Divider */
+    .divider {
+      display: flex; align-items: center; gap: 12px;
+      color: var(--hint); font-size: 12px; margin: 16px 0;
+    }
+    .divider::before, .divider::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+
+    /* Drop zone */
+    #drop-zone {
+      border: 1.5px dashed var(--bg3); border-radius: 14px;
+      padding: 28px; text-align: center; cursor: pointer;
+      transition: all 0.2s; margin-bottom: 24px; background: var(--bg);
+    }
+    #drop-zone:hover, #drop-zone.over {
+      border-color: var(--gold); background: var(--gold-s);
+    }
+    #drop-zone .dz-icon { font-size: 28px; margin-bottom: 10px; }
+    #drop-zone h4 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+    #drop-zone p  { font-size: 12px; color: var(--hint); }
+    #file-input { display: none; }
+
+    /* Demo scenes */
+    .demo-head {
+      font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--hint); margin-bottom: 10px;
+    }
+
+    .demo-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .demo-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 11px 14px; background: var(--bg2);
+      border: 1px solid var(--border); border-radius: 10px;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .demo-item:hover { border-color: var(--gold-b); background: var(--gold-s); }
+
+    .di-info { display: flex; flex-direction: column; }
+    .di-name { font-size: 13px; font-weight: 600; }
+    .di-src  { font-size: 11px; color: var(--hint); margin-top: 2px; }
+
+    .di-tag {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+      padding: 3px 8px; border-radius: 5px;
+      background: var(--gold-s); color: var(--gold-h);
+    }
+
+    /* ─── LOADING OVERLAY ────────────────────────────────── */
+    #loading-overlay {
+      position: fixed; inset: 0; z-index: 30;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: rgba(250,248,245,0.96);
+      backdrop-filter: blur(20px);
+      opacity: 0; visibility: hidden;
+      transition: opacity 0.3s ease, visibility 0.3s ease;
+    }
+    #loading-overlay.active { opacity: 1; visibility: visible; }
+
+    .spinner-ring {
+      width: 52px; height: 52px;
+      border: 3px solid var(--bg3);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.85s linear infinite;
+      margin-bottom: 20px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .ld-title  { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+    .ld-file   { font-size: 12px; color: var(--hint); max-width: 380px;
+                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 20px; }
+
+    .prog-outer { width: 260px; height: 4px; background: var(--bg3); border-radius: 2px; overflow: hidden; }
+    .prog-inner { height: 100%; width: 0; background: var(--gold); border-radius: 2px; transition: width 0.25s ease; }
+
+    .ld-pct { font-size: 12px; color: var(--hint); margin-top: 8px; }
+
+    /* ─── HUD (over the 3D canvas) ───────────────────────── */
+    #hud {
+      position: fixed; inset: 0; z-index: 10;
+      pointer-events: none;
+      opacity: 0; visibility: hidden;
+      transition: opacity 0.4s ease, visibility 0.4s ease;
+    }
+    #hud.active { opacity: 1; visibility: visible; }
+
+    /* Top strip */
+    .hud-top {
+      position: absolute; top: 0; left: 0; right: 0;
+      padding: 18px 22px;
+      display: flex; align-items: center; justify-content: space-between;
+      background: linear-gradient(to bottom, rgba(250,248,245,0.55) 0%, transparent 100%);
+    }
+
+    .hud-left  { display: flex; align-items: center; gap: 10px; pointer-events: all; }
+    .hud-right { display: flex; gap: 8px; pointer-events: all; }
+
+    /* Glassmorphic warm button — readable over dark 3D canvas */
+    .hbtn {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(250,248,245,0.88);
+      backdrop-filter: blur(14px) saturate(1.4);
+      border: 1px solid rgba(200,165,92,0.25);
+      border-radius: 9px; padding: 8px 14px;
+      font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500;
+      color: var(--text); cursor: pointer; text-decoration: none;
+      transition: all 0.2s;
+      box-shadow: 0 2px 8px rgba(44,42,37,0.08);
+    }
+    .hbtn:hover { background: rgba(250,248,245,0.98); border-color: var(--gold-b);
+                  box-shadow: 0 4px 14px rgba(44,42,37,0.12); }
+    .hbtn.gold  { background: var(--gold); color: #fff; border-color: var(--gold); }
+    .hbtn.gold:hover { background: var(--gold-h); }
+
+    .hud-logo {
+      font-size: 13px; font-weight: 700;
+      color: var(--text);
+      padding: 8px 12px;
+      background: rgba(250,248,245,0.75);
+      backdrop-filter: blur(14px);
+      border-radius: 9px;
+      border: 1px solid var(--border);
+    }
+    .hud-logo span { color: var(--gold); }
+
+    /* Scene name pill */
+    #scene-name {
+      font-size: 12px; color: var(--muted);
+      background: rgba(250,248,245,0.80);
+      backdrop-filter: blur(14px);
+      border: 1px solid var(--border);
+      border-radius: 100px; padding: 5px 14px;
+      max-width: 240px; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    /* Bottom controls hint */
+    .hud-bottom {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      padding: 20px 22px;
+      display: flex; justify-content: center;
+      background: linear-gradient(to top, rgba(250,248,245,0.40) 0%, transparent 100%);
+      pointer-events: none;
+    }
+
+    .ctrl-hint {
+      display: flex; gap: 18px; align-items: center;
+      background: rgba(250,248,245,0.85);
+      backdrop-filter: blur(14px);
+      border: 1px solid var(--border);
+      border-radius: 100px; padding: 9px 22px;
+      box-shadow: 0 2px 8px rgba(44,42,37,0.06);
+      pointer-events: all; cursor: pointer;
+      transition: opacity 0.4s ease;
+    }
+    .ctrl-hint.fade { opacity: 0; pointer-events: none; }
+
+    .ch-item { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+    .ch-key  {
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 5px; padding: 2px 7px;
+      font-size: 11px; font-weight: 600; color: var(--text);
+    }
+    .ch-sep  { width: 1px; height: 14px; background: var(--border); }
+
+    /* ─── TOAST (success / error) ─────────────────────────── */
+    #toast {
+      position: fixed; bottom: 28px; left: 50%; z-index: 60;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px 22px;
+      font-size: 13px; font-weight: 500; color: var(--text);
+      box-shadow: 0 8px 24px rgba(44,42,37,0.12);
+      transition: transform 0.35s cubic-bezier(0.34,1.56,0.64,1);
+      max-width: 380px; text-align: center;
+      white-space: nowrap;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+    #toast.error { border-color: rgba(196,112,112,0.4); color: var(--rose); }
+    #toast.success { border-color: var(--gold-b); color: var(--gold-h); }
+
+    /* ─── MOBILE HELPERS ─────────────────────────────────── */
+    @media (max-width: 560px) {
+      .load-wrap { padding: 32px 24px; }
+      .ch-sep, .ch-item:nth-child(3) { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══ EMPTY STATE ═══════════════════════════════════════ -->
+<div id="empty-state">
+  <div class="load-wrap">
+    <div class="load-logo">
+      ABUZ8 · 3D Space
+      <a href="index.html">← Back to site</a>
+    </div>
+
+    <h2>Load a 3D Scene</h2>
+    <p>Paste a URL to a .splat or .ply file, or upload one from your computer.</p>
+
+    <div class="url-row">
+      <input type="text" id="url-input" placeholder="https://example.com/scene.splat" autocomplete="off" spellcheck="false">
+      <button class="btn-load" id="btn-load-url">Load →</button>
+    </div>
+
+    <div class="divider">or upload a file</div>
+
+    <div id="drop-zone">
+      <div class="dz-icon">⬆</div>
+      <h4>Drop .splat / .ply / .ksplat here</h4>
+      <p>or click to browse your computer</p>
+    </div>
+    <input type="file" id="file-input" accept=".splat,.ply,.ksplat">
+
+    <div class="demo-head">Sample Scenes</div>
+    <div class="demo-list">
+      <div class="demo-item" data-url="https://huggingface.co/cakewalk/splat-data/resolve/main/nike.splat" data-name="Nike Shoe">
+        <div class="di-info">
+          <div class="di-name">Nike Shoe</div>
+          <div class="di-src">Object scan · huggingface.co</div>
+        </div>
+        <div class="di-tag">.SPLAT</div>
+      </div>
+      <div class="demo-item" data-url="https://huggingface.co/datasets/dylanebert/3dgs/resolve/main/bonsai/point_cloud/iteration_30000/point_cloud.ply" data-name="Bonsai Tree">
+        <div class="di-info">
+          <div class="di-name">Bonsai Tree</div>
+          <div class="di-src">Indoor scene · huggingface.co</div>
+        </div>
+        <div class="di-tag">.PLY</div>
+      </div>
+      <div class="demo-item" data-url="https://huggingface.co/datasets/dylanebert/3dgs/resolve/main/bicycle/point_cloud/iteration_30000/point_cloud.ply" data-name="Bicycle">
+        <div class="di-info">
+          <div class="di-name">Bicycle</div>
+          <div class="di-src">Outdoor scene · huggingface.co</div>
+        </div>
+        <div class="di-tag">.PLY</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ LOADING OVERLAY ═══════════════════════════════════ -->
+<div id="loading-overlay">
+  <div class="spinner-ring"></div>
+  <div class="ld-title">Reconstructing 3D scene…</div>
+  <div class="ld-file" id="ld-file"></div>
+  <div class="prog-outer">
+    <div class="prog-inner" id="prog-inner"></div>
+  </div>
+  <div class="ld-pct" id="ld-pct">0%</div>
+</div>
+
+<!-- ═══ 3D CANVAS ══════════════════════════════════════════ -->
+<div id="canvas-root"></div>
+
+<!-- ═══ HUD ═══════════════════════════════════════════════ -->
+<div id="hud">
+  <div class="hud-top">
+    <div class="hud-left">
+      <button class="hbtn" id="btn-back">← New Scene</button>
+      <div class="hud-logo">ABU<span>Z8</span></div>
+      <div id="scene-name"></div>
+    </div>
+    <div class="hud-right">
+      <button class="hbtn" id="btn-share">⤢ Share Link</button>
+      <button class="hbtn" id="btn-fs">⛶</button>
+    </div>
+  </div>
+
+  <div class="hud-bottom">
+    <div class="ctrl-hint" id="ctrl-hint">
+      <div class="ch-item"><span class="ch-key">Drag</span> Rotate</div>
+      <div class="ch-sep"></div>
+      <div class="ch-item"><span class="ch-key">Scroll</span> Zoom</div>
+      <div class="ch-sep"></div>
+      <div class="ch-item"><span class="ch-key">Right-drag</span> Pan</div>
+      <div class="ch-sep"></div>
+      <div class="ch-item" style="opacity:0.5">click to dismiss</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ TOAST ══════════════════════════════════════════════ -->
+<div id="toast"></div>
+
+
+<script type="module">
+// ─────────────────────────────────────────────────────────
+//  Imports
+// ─────────────────────────────────────────────────────────
+import * as THREE from 'three';
+import * as GS3D from 'https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.6/build/gaussian-splats-3d.module.min.js';
+
+// ─────────────────────────────────────────────────────────
+//  DOM refs
+// ─────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+
+const emptyState   = $('empty-state');
+const loadingOL    = $('loading-overlay');
+const canvasRoot   = $('canvas-root');
+const hud          = $('hud');
+const urlInput     = $('url-input');
+const progInner    = $('prog-inner');
+const ldFile       = $('ld-file');
+const ldPct        = $('ld-pct');
+const sceneName    = $('scene-name');
+const ctrlHint     = $('ctrl-hint');
+const toastEl      = $('toast');
+
+// ─────────────────────────────────────────────────────────
+//  State
+// ─────────────────────────────────────────────────────────
+let viewer        = null;
+let blobUrl       = null;
+let hintTimer     = null;
+let progTimer     = null;
+let progValue     = 0;
+
+// ─────────────────────────────────────────────────────────
+//  UI helpers
+// ─────────────────────────────────────────────────────────
+function showEmpty() {
+  emptyState.classList.remove('hidden');
+  loadingOL.classList.remove('active');
+  hud.classList.remove('active');
+}
+
+function showLoading(filename) {
+  ldFile.textContent    = filename;
+  progInner.style.width = '0%';
+  ldPct.textContent     = '0%';
+  loadingOL.classList.add('active');
+  emptyState.classList.add('hidden');
+  hud.classList.remove('active');
+  startFakeProgress();
+}
+
+function showViewer(name) {
+  loadingOL.classList.remove('active');
+  hud.classList.add('active');
+  sceneName.textContent = name;
+  clearTimeout(hintTimer);
+  ctrlHint.classList.remove('fade');
+  hintTimer = setTimeout(() => ctrlHint.classList.add('fade'), 5500);
+}
+
+function setProgress(pct) {
+  progValue = Math.max(progValue, pct);
+  progInner.style.width = progValue + '%';
+  ldPct.textContent = Math.round(progValue) + '%';
+}
+
+function startFakeProgress() {
+  progValue = 0;
+  clearInterval(progTimer);
+  progTimer = setInterval(() => {
+    if (progValue < 88) {
+      progValue += (88 - progValue) * 0.04 + 0.3;
+      setProgress(progValue);
+    }
+  }, 120);
+}
+
+function finishProgress() {
+  clearInterval(progTimer);
+  setProgress(100);
+}
+
+function toast(msg, type = '') {
+  toastEl.textContent  = msg;
+  toastEl.className    = 'show' + (type ? ' ' + type : '');
+  clearTimeout(toastEl._t);
+  toastEl._t = setTimeout(() => { toastEl.className = ''; }, 3800);
+}
+
+// ─────────────────────────────────────────────────────────
+//  Viewer lifecycle
+// ─────────────────────────────────────────────────────────
+async function destroyViewer() {
+  if (!viewer) return;
+  try {
+    viewer.stop();
+    await new Promise(r => setTimeout(r, 80));
+    viewer.dispose();
+  } catch (_) {}
+  viewer = null;
+  canvasRoot.innerHTML = '';
+  if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
+}
+
+async function loadScene(url, displayName) {
+  if (!url?.trim()) { toast('Please enter a URL', 'error'); return; }
+
+  url         = url.trim();
+  displayName = displayName || url.split('/').pop().split('?')[0] || 'scene';
+
+  await destroyViewer();
+  showLoading(displayName);
+
+  try {
+    viewer = new GS3D.Viewer({
+      selfDrivenMode:             true,
+      rootElement:                canvasRoot,
+      cameraUp:                   [0, -1, 0],
+      initialCameraPosition:      [0, -3, 5],
+      initialCameraLookAt:        [0, 0, 0],
+      gpuAcceleratedSort:         true,
+      halfPrecisionCovariancesOnGPU: true,
+      useBuiltInControls:         true,
+    });
+
+    await viewer.addSplatScene(url, {
+      splatAlphaRemovalThreshold: 5,
+      showLoadingUI:              false,
+      onProgress(pct) { setProgress(pct); },
+    });
+
+    viewer.start();
+    finishProgress();
+
+    // Short delay so progress bar hits 100% visibly
+    await new Promise(r => setTimeout(r, 280));
+    showViewer(displayName);
+
+    // Update hash for shareable links
+    window.location.hash = encodeURIComponent(url);
+
+  } catch (err) {
+    console.error('[ABUZ8 3D] Load error:', err);
+    clearInterval(progTimer);
+    await destroyViewer();
+    showEmpty();
+    toast('Could not load scene — check URL and CORS headers', 'error');
+  }
+}
+
+async function loadFile(file) {
+  if (!file) return;
+
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['splat', 'ply', 'ksplat'].includes(ext)) {
+    toast('Unsupported file type — use .splat, .ply, or .ksplat', 'error');
+    return;
+  }
+
+  blobUrl = URL.createObjectURL(file);
+  await loadScene(blobUrl, file.name);
+}
+
+// ─────────────────────────────────────────────────────────
+//  Window resize
+// ─────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  if (!viewer) return;
+  try {
+    viewer.renderer?.setSize(window.innerWidth, window.innerHeight);
+    viewer.camera?.aspect && (viewer.camera.aspect = window.innerWidth / window.innerHeight);
+    viewer.camera?.updateProjectionMatrix?.();
+  } catch (_) {}
+});
+
+// ─────────────────────────────────────────────────────────
+//  Event wiring
+// ─────────────────────────────────────────────────────────
+
+// Load from URL
+$('btn-load-url').addEventListener('click', () => loadScene(urlInput.value));
+urlInput.addEventListener('keydown', e => { if (e.key === 'Enter') loadScene(urlInput.value); });
+
+// File upload
+const dropZone  = $('drop-zone');
+const fileInput = $('file-input');
+
+dropZone.addEventListener('click',   () => fileInput.click());
+fileInput.addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0]); });
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
+dropZone.addEventListener('dragleave',  () => dropZone.classList.remove('over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('over');
+  if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+
+// Demo scenes
+document.querySelectorAll('.demo-item').forEach(el => {
+  el.addEventListener('click', () => {
+    const url  = el.dataset.url;
+    const name = el.dataset.name;
+    urlInput.value = url;
+    loadScene(url, name);
+  });
+});
+
+// Back button
+$('btn-back').addEventListener('click', async () => {
+  await destroyViewer();
+  window.location.hash = '';
+  showEmpty();
+});
+
+// Share
+$('btn-share').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(window.location.href);
+    toast('Link copied to clipboard ✓', 'success');
+  } catch {
+    prompt('Copy this shareable link:', window.location.href);
+  }
+});
+
+// Fullscreen
+$('btn-fs').addEventListener('click', () => {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {});
+    $('btn-fs').textContent = '✕';
+  } else {
+    document.exitFullscreen();
+    $('btn-fs').textContent = '⛶';
+  }
+});
+
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement) $('btn-fs').textContent = '⛶';
+});
+
+// Dismiss controls hint
+ctrlHint.addEventListener('click', () => ctrlHint.classList.add('fade'));
+
+// Hash-based sharing — load scene from URL hash on page open
+function checkHash() {
+  const hash = window.location.hash.slice(1);
+  if (hash) {
+    const url = decodeURIComponent(hash);
+    urlInput.value = url;
+    loadScene(url);
+  }
+}
+
+checkHash();
+window.addEventListener('hashchange', () => {
+  if (!window.location.hash) {
+    destroyViewer();
+    showEmpty();
+  }
+});
+</script>
+
+</body>
+</html>
